@@ -156,8 +156,8 @@
 
         // 3. Load High-Resolution Earth Water Mask
         const img = new Image();
-        // img.crossOrigin = "Anonymous";
-        img.src = 'assets/gemini_generated_image_9pu1ow9pu1ow9pu1.png'
+        // Resolve the local asset path so Vite includes it in the 'build' folder
+        img.src = new URL('./assets/gemini_generated_image_9pu1ow9pu1ow9pu1.png', import.meta.url).href;
 
         img.onload = () => {
             document.getElementById('loading').style.opacity = '0';
