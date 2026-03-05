@@ -31,21 +31,12 @@
 <body>
     <div id="loading">LOADING...</div>
 
-    <!-- Import maps polyfill for older browsers -->
-    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
-
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-            }
-        }
-    </script>
+    <!-- Using Vite module resolution instead of importmaps to run locally -->
 
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import GUI from 'lil-gui';
 
         // 1. Setup Scene, Camera, and Renderer
         const scene = new THREE.Scene();
@@ -69,8 +60,21 @@
         controls.maxDistance = 400;
         controls.target.set(0, 0, 0); // Ensure globe rotates around true center
 
+        // GUI Parameters State
+        const params = {
+            rotationSpeed: 0.001,
+            mapThreshold: 128,
+            dotColor: '#ffffff',
+            bgColor: '#000000'
+        };
+
         const globeGroup = new THREE.Group();
         scene.add(globeGroup);
+
+        // Variables needed globally for the GUI and re-rendering
+        let pointsMesh;
+        let imgDataObject = null;
+        let mapImageObj = null;
 
         // Helper function to create a circular soft dot texture
         function createCircleTexture() {
@@ -85,67 +89,50 @@
             return new THREE.CanvasTexture(canvas);
         }
 
-        // 3. Load Earth Specular Map Image
-        const img = new Image();
-        img.crossOrigin = "Anonymous";
-        // The three.js specular map: oceans are bright (white), land is dark (black)
-        img.src = "https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_specular_2048.jpg";
+        // Function to generate the globe dots based on current threshold and image data
+        function generateGlobeDots() {
+            if (!imgDataObject || !mapImageObj) return;
 
-        img.onload = () => {
-            document.getElementById('loading').style.opacity = '0';
-
-            // Draw image to a background canvas to read pixel data
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            ctx.drawImage(img, 0, 0);
-            const imgData = ctx.getImageData(0, 0, img.width, img.height).data;
+            // Remove previous points if they exist (for live updates via GUI)
+            if (pointsMesh) {
+                globeGroup.remove(pointsMesh);
+                pointsMesh.geometry.dispose();
+                pointsMesh.material.dispose();
+            }
 
             const vertices = [];
             const radius = 100;
-            const rows = 120; // Controls the density of horizontal bands (the dotted look)
+            const rows = 240;
 
-            // 4. Generate points in a structured spherical grid layout
             for (let lat = -90; lat <= 90; lat += 180 / rows) {
                 const r2 = Math.cos(lat * Math.PI / 180) * radius;
                 const circumference = 2 * Math.PI * r2;
 
-                // Keep horizontal spacing identical to vertical spacing
                 const pointsInRow = Math.max(1, Math.floor(circumference / (Math.PI * radius / rows)));
 
                 for (let i = 0; i < pointsInRow; i++) {
-                    const lon = (i / pointsInRow) * 360 - 180; // from -180 to 180
+                    const lon = (i / pointsInRow) * 360 - 180;
 
-                    // Map lat/lon to image UV coordinates (0 to 1)
                     const u = (lon + 180) / 360;
                     const v = 1 - (lat + 90) / 180;
 
-                    // Map to image pixels
-                    let x = Math.floor(u * img.width);
-                    let y = Math.floor(v * img.height);
-                    if (x >= img.width) x = img.width - 1;
-                    if (y >= img.height) y = img.height - 1;
+                    let x = Math.floor(u * mapImageObj.width);
+                    let y = Math.floor(v * mapImageObj.height);
+                    if (x >= mapImageObj.width) x = mapImageObj.width - 1;
+                    if (y >= mapImageObj.height) y = mapImageObj.height - 1;
 
-                    const index = (y * img.width + x) * 4;
-                    const brightness = imgData[index]; // using Red channel as brightness
+                    const index = (y * mapImageObj.width + x) * 4;
+                    const brightness = imgDataObject[index];
 
-                    // Specular Map: dark pixels (<60) are land, bright pixels are ocean
-                    if (brightness < 60) {
+                    if (brightness < params.mapThreshold) {
                         const phi = (90 - lat) * Math.PI / 180;
                         const theta = (lon + 180) * Math.PI / 180;
 
-                        // Convert spherical coordinates to Cartesian coordinates
                         const px = radius * Math.sin(phi) * Math.cos(theta);
                         const py = radius * Math.cos(phi);
                         const pz = radius * Math.sin(phi) * Math.sin(theta);
 
-                        // Add positions without jitter for a perfectly round globe
-                        vertices.push(
-                            px,
-                            py,
-                            pz
-                        );
+                        vertices.push(px, py, pz);
                     }
                 }
             }
@@ -154,25 +141,81 @@
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
 
             const material = new THREE.PointsMaterial({
-                color: 0xffffff,
-                size: 2.5,
+                color: params.dotColor,
+                size: 1.5,
                 map: createCircleTexture(),
                 transparent: true,
-                opacity: 0.9,
+                opacity: 0.8,
                 alphaTest: 0.1,
                 sizeAttenuation: true
             });
 
-            const points = new THREE.Points(geometry, material);
+            pointsMesh = new THREE.Points(geometry, material);
+            globeGroup.add(pointsMesh);
+        }
 
-            // Remove Earth's axial tilt to keep the globe straight
+        // 3. Load High-Resolution Earth Water Mask
+        const img = new Image();
+        // img.crossOrigin = "Anonymous";
+        img.src = 'assets/gemini_generated_image_9pu1ow9pu1ow9pu1.png'
+
+        img.onload = () => {
+            document.getElementById('loading').style.opacity = '0';
+            mapImageObj = img;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(img, 0, 0);
+            imgDataObject = ctx.getImageData(0, 0, img.width, img.height).data;
+
+            // Generate initial dots
+            generateGlobeDots();
+
+            // Add inner black sphere behind dots
+            const radius = 100;
+            const innerSphereGeom = new THREE.SphereGeometry(radius - 0.2, 64, 64);
+            const innerSphereMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const innerSphere = new THREE.Mesh(innerSphereGeom, innerSphereMat);
+
             globeGroup.rotation.z = 0;
-            globeGroup.add(points);
+            globeGroup.add(innerSphere);
         };
+
+        // --- BUILD GUI PANEL ---
+        const gui = new GUI({ title: 'Globe Settings' });
+
+        gui.add(params, 'rotationSpeed', -0.01, 0.01).name('Rotation Speed');
+
+        gui.add(params, 'mapThreshold', 0, 255, 1).name('Map Threshold').onChange(() => {
+            // Re-generate dots when threshold is completely tweaked
+            generateGlobeDots();
+        });
+
+        gui.addColor(params, 'dotColor').name('Dots Color').onChange((val) => {
+            if (pointsMesh && pointsMesh.material) {
+                pointsMesh.material.color.set(val);
+            }
+        });
+
+        gui.addColor(params, 'bgColor').name('Background Color').onChange((val) => {
+            document.body.style.backgroundColor = val; // Update HTML body
+            // Background is technically set by CSS, but renderer respects the body color if alpha is true
+        });
+
+        // Set initial body background to match default params
+        document.body.style.backgroundColor = params.bgColor;
 
         img.onerror = () => {
             document.getElementById('loading').innerText = "ERROR LOADING TEXTURE";
         };
+
+        // ---------- GLOBE ROTATION SPEED ----------
+        // Change this value to make the globe spin faster or slower.
+        // Positive values spin right, negative values spin left.
+        const rotationSpeed = 0.001;
+        // ------------------------------------------
 
         // Window resize handler
         window.addEventListener('resize', () => {
@@ -186,12 +229,8 @@
             requestAnimationFrame(animate);
             controls.update();
 
-            // Rotate the globe on its own slightly tilted Y axis
-            if (globeGroup.children.length > 0) {
-                const pointsMesh = globeGroup.children[0];
-                // Rotate locally around Y axis
-                pointsMesh.rotation.y -= 0.0005;
-            }
+            // Rotate the entire globe group
+            globeGroup.rotation.y -= params.rotationSpeed;
 
             renderer.render(scene, camera);
         }
