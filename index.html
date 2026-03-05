@@ -66,7 +66,8 @@
             rotationSpeed: 0.001,
             mapThreshold: 128,
             dotColor: '#ffffff',
-            bgColor: '#000000'
+            bgColor: '#000000',
+            innerOpacity: 1.0 // 1 = solid black core, 0 = completely see-through
         };
 
         const globeGroup = new THREE.Group();
@@ -74,6 +75,7 @@
 
         // Variables needed globally for the GUI and re-rendering
         let pointsMesh;
+        let innerSphereMesh;
         let imgDataObject = null;
         let mapImageObj = null;
 
@@ -146,7 +148,7 @@
                 size: 1.5,
                 map: createCircleTexture(),
                 transparent: true,
-                opacity: 0.8,
+                opacity: 0.8, // Fixed dot opacity
                 alphaTest: 0.1,
                 sizeAttenuation: true
             });
@@ -177,11 +179,15 @@
             // Add inner black sphere behind dots
             const radius = 100;
             const innerSphereGeom = new THREE.SphereGeometry(radius - 0.2, 64, 64);
-            const innerSphereMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-            const innerSphere = new THREE.Mesh(innerSphereGeom, innerSphereMat);
+            const innerSphereMat = new THREE.MeshBasicMaterial({
+                color: 0x000000,
+                transparent: true,
+                opacity: params.innerOpacity
+            });
+            innerSphereMesh = new THREE.Mesh(innerSphereGeom, innerSphereMat);
 
             globeGroup.rotation.z = 0;
-            globeGroup.add(innerSphere);
+            globeGroup.add(innerSphereMesh);
         };
 
         // --- BUILD GUI PANEL ---
@@ -192,6 +198,12 @@
         gui.add(params, 'mapThreshold', 0, 255, 1).name('Map Threshold').onChange(() => {
             // Re-generate dots when threshold is completely tweaked
             generateGlobeDots();
+        });
+
+        gui.add(params, 'innerOpacity', 0, 1, 0.01).name('Core Opacity').onChange((val) => {
+            if (innerSphereMesh && innerSphereMesh.material) {
+                innerSphereMesh.material.opacity = val;
+            }
         });
 
         gui.addColor(params, 'dotColor').name('Dots Color').onChange((val) => {
