@@ -66,6 +66,7 @@
             rotationSpeed: 0.001,
             rotationDirection: -1, // -1 = Right, 1 = Left
             mapThreshold: 128,
+            dotSize: 1.5,
             dotColor: '#ffffff',
             bgColor: '#000000'
         };
@@ -144,7 +145,7 @@
 
             const material = new THREE.PointsMaterial({
                 color: params.dotColor,
-                size: 1.5,
+                size: params.dotSize,
                 map: createCircleTexture(),
                 transparent: true,
                 opacity: 0.8, // Fixed dot opacity
@@ -193,6 +194,12 @@
         gui.addColor(params, 'dotColor').name('Dots Color').onChange((val) => {
             if (pointsMesh && pointsMesh.material) {
                 pointsMesh.material.color.set(val);
+            }
+        });
+
+        gui.add(params, 'dotSize', 0.1, 5.0, 0.1).name('Dots Size').onChange((val) => {
+            if (pointsMesh && pointsMesh.material) {
+                pointsMesh.material.size = val;
             }
         });
 
